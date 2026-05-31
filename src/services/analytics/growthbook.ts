@@ -59,6 +59,13 @@ export function getDynamicConfig_CACHED_MAY_BE_STALE<T>(
   return defaultValue
 }
 
+export async function getDynamicConfig_BLOCKS_ON_INIT<T>(
+  _configName: string,
+  defaultValue: T,
+): Promise<T> {
+  return defaultValue
+}
+
 export async function initializeGrowthBook(): Promise<null> {
   return null
 }
@@ -75,5 +82,12 @@ export async function waitForGrowthBookSecurityGate(
   _gate: string,
   _defaultValue: boolean,
 ): Promise<boolean> {
+  return false
+}
+
+export function checkSecurityRestrictionGate(
+  _gate: string,
+  _defaultValue: boolean,
+): boolean {
   return false
 }

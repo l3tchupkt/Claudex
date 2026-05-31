@@ -1,32 +1,35 @@
 #!/usr/bin/env node
 
-/**
- * Claudex — Claude Code with any LLM
- *
- * If dist/cli.mjs exists (built), run that.
- * Otherwise, tell the user to build first or use `bun run dev`.
- */
-
-import { existsSync } from 'fs'
+import { existsSync, statSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
+import { execSync } from 'child_process'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const distPath = join(__dirname, '..', 'dist', 'cli.mjs')
+const rootDir = join(__dirname, '..')
+const distPath = join(rootDir, 'dist', 'cli.mjs')
+const srcDir = join(rootDir, 'src')
 
-if (existsSync(distPath)) {
-  await import(pathToFileURL(distPath).href)
-} else {
-  console.error(`
-  claudex: dist/cli.mjs not found.
-
-  Build first:
-    bun run build
-
-  Or run directly with Bun:
-    bun run dev
-
-  See README.md for setup instructions.
-`)
-  process.exit(1)
+function newestSrcTime(dir) {
+  try {
+    let latest = 0
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory() && entry.name !== 'node_modules') {
+        latest = Math.max(latest, newestSrcTime(full))
+      } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) {
+        latest = Math.max(latest, statSync(full).mtimeMs)
+      }
+    }
+    return latest
+  } catch {
+    return Infinity
+  }
 }
+
+if (!existsSync(distPath) || newestSrcTime(srcDir) > statSync(distPath).mtimeMs) {
+  console.error('claudex: building...')
+  execSync('bun run build', { cwd: rootDir, stdio: 'inherit' })
+}
+
+await import(pathToFileURL(distPath).href)

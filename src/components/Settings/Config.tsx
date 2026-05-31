@@ -15,10 +15,11 @@ import { permissionModeTitle, permissionModeFromString, toExternalPermissionMode
 import { getAutoModeEnabledState, hasAutoModeOptInAnySource, transitionPlanAutoMode } from '../../utils/permissions/permissionSetup.js';
 import { logError } from '../../utils/log.js';
 import { logEvent, type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js';
-import { ThemePicker } from '../ThemePicker.js';
+import { ThemePicker } from '../theme/ThemePicker.js';
 // bridge removed — always disabled
 const isBridgeEnabled = (): boolean => false
-import { useAppState, useSetAppState, useAppStateStore } from '../../state/AppState.js';
+import { useAppState, useSetAppState, useAppStateStore } from '../../state/AppState';
+import type { AppState } from '../../state/AppStateStore';
 import { ModelPicker } from '../ModelPicker.js';
 import { modelDisplayString, isOpus1mMergeEnabled } from '../../utils/model/model.js';
 import { isBilledAsExtraUsage } from '../../utils/extraUsage.js';
@@ -115,11 +116,11 @@ export function Config({
   // Fallback calc for standalone rendering (tests).
   const paneCap = contentHeight ?? Math.min(Math.floor(rows * 0.8), 30);
   const maxVisible = Math.max(5, paneCap - 10);
-  const mainLoopModel = useAppState(s => s.mainLoopModel);
-  const verbose = useAppState(s_0 => s_0.verbose);
-  const thinkingEnabled = useAppState(s_1 => s_1.thinkingEnabled);
-  const isFastMode = useAppState(s_2 => isFastModeEnabled() ? s_2.fastMode : false);
-  const promptSuggestionEnabled = useAppState(s_3 => s_3.promptSuggestionEnabled);
+  const mainLoopModel = useAppState((s: AppState) => s.mainLoopModel);
+  const verbose = useAppState((s_0: AppState) => s_0.verbose);
+  const thinkingEnabled = useAppState((s_1: AppState) => s_1.thinkingEnabled ?? false);
+  const isFastMode = useAppState((s_2: AppState) => isFastModeEnabled() ? (s_2.fastMode ?? false) : false);
+  const promptSuggestionEnabled = useAppState((s_3: AppState) => s_3.promptSuggestionEnabled);
   // Show auto in the default-mode dropdown when the user has opted in OR the
   // config is fully 'enabled' — even if currently circuit-broken ('disabled'),
   // an opted-in user should still see it in settings (it's a temporary state).
@@ -1574,9 +1575,10 @@ export function Config({
                 <ConfigurableShortcutHint action="confirm:no" context="Settings" fallback="Esc" description="cancel" />
               </Byline>
             </Text>}
-        </Box>}
+                </Box>}
     </Box>;
 }
+function getModelLabel(value: string | null): string {
   if (value === null) return "Default (leader's model)";
   return modelDisplayString(value);
 }
