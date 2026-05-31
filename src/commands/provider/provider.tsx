@@ -17,6 +17,7 @@ import {
   resolveCodexApiCredentials,
   resolveProviderRequest,
 } from '../../services/api/providerConfig.js'
+import { listNvidiaModels } from '../../utils/nvidiaProvider'
 import {
   buildCodexProfileEnv,
   buildGeminiProfileEnv,
@@ -865,6 +866,187 @@ function OllamaModelStep({
   )
 }
 
+function NvidiaModelStep({
+  apiKey,
+  baseUrl,
+  onSave,
+  onBack,
+  onCancel,
+}: {
+  apiKey: string
+  baseUrl: string | null
+  onSave: (profile: ProviderProfile, env: ProfileEnv) => void
+  onBack: () => void
+  onCancel: () => void
+}): React.ReactNode {
+  const [status, setStatus] = React.useState<
+    | { state: 'loading' }
+    | {
+        state: 'ready'
+        options: OptionWithDescription<string>[]
+        defaultValue?: string
+      }
+    | { state: 'error'; message: string }
+  >({ state: 'loading' })
+  const [searchTerm, setSearchTerm] = React.useState('')
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const models = await listNvidiaModels(baseUrl ?? undefined)
+        if (!cancelled) {
+          if (models.length === 0) {
+            setStatus({
+              state: 'error',
+              message:
+                'No models found. Please check your API key and network connection.',
+            })
+          } else {
+            setStatus({
+              state: 'ready',
+              defaultValue: models[0],
+              options: models.map(model => ({
+                label: model,
+                value: model,
+                description: 'NVIDIA NIM model',
+              })),
+            })
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setStatus({
+            state: 'error',
+            message:
+              error instanceof Error
+                ? `Failed to fetch models: ${error.message}`
+                : 'Failed to fetch models',
+          })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [apiKey, baseUrl])
+
+  if (status.state === 'loading') {
+    return (
+      <Dialog title="Fetching NVIDIA models" onCancel={onBack}>
+        <Box flexDirection="column" gap={1}>
+          <LoadingState message="Fetching available NVIDIA models…" />
+          <Text dimColor>
+            Press Esc to cancel
+          </Text>
+        </Box>
+      </Dialog>
+    )
+  }
+
+  if (status.state === 'error') {
+    return (
+      <Dialog title="NVIDIA NIM setup" onCancel={onCancel} color="warning">
+        <Box flexDirection="column" gap={1}>
+          <Text>{status.message}</Text>
+          <Text>
+            You can still enter a model ID manually if you know it.
+          </Text>
+          <Select
+            options={[
+              { label: 'Try again', value: 'retry' },
+              { label: 'Enter model ID manually', value: 'manual' },
+              { label: 'Back', value: 'back' },
+              { label: 'Cancel', value: 'cancel' },
+            ]}
+            onChange={(value: string) => {
+              if (value === 'retry') {
+                setStatus({ state: 'loading' })
+              } else if (value === 'manual') {
+                // Fall back to manual entry
+                onSave(
+                  'nvidia',
+                  buildNvidiaProfileEnv({
+                    apiKey,
+                    baseUrl,
+                    model: '',
+                    processEnv: {},
+                  })!
+                )
+              } else if (value === 'back') {
+                onBack()
+              } else {
+                onCancel()
+              }
+            }}
+            onCancel={onCancel}
+          />
+        </Box>
+      </Dialog>
+    )
+  }
+
+  // Filter options based on search term
+  const filteredOptions =
+    status.options.filter(option => {
+      const label = option.label as string
+      return label.toLowerCase().includes(searchTerm.toLowerCase())
+    })
+
+  return (
+    <Dialog title="Choose a NVIDIA NIM model" onCancel={onBack}>
+      <Box flexDirection="column" gap={1}>
+        <Text>
+          Select from the available models for your NVIDIA API key.
+        </Text>
+        {searchTerm && (
+          <Text dimColor>
+            Showing {filteredOptions.length} of {status.options.length} models
+          </Text>
+        )}
+        <TextInput
+          placeholder="Search models..."
+          value={searchTerm}
+          onChange={setSearchTerm}
+          columns={30}
+          cursorOffset={searchTerm.length}
+          onChangeCursorOffset={(offset) => {
+            // This is required by the TextInput component but we don't need to use it
+          }}
+          focus
+        />
+        <Select
+          options={filteredOptions.length > 0 ? filteredOptions : [{ label: 'No models found', value: '', disabled: true }]}
+          defaultValue={filteredOptions.length > 0 ? filteredOptions[0]?.value : undefined}
+          defaultFocusValue={filteredOptions.length > 0 ? filteredOptions[0]?.value : undefined}
+          inlineDescriptions
+          visibleOptionCount={Math.min(8, filteredOptions.length > 0 ? filteredOptions.length : 1)}
+          onChange={(value: string) => {
+            if (value && !filteredOptions.some(opt => opt.value === value && !opt.disabled)) {
+              return
+            }
+            onSave(
+              'nvidia',
+              buildNvidiaProfileEnv({
+                apiKey,
+                baseUrl,
+                model: value,
+                processEnv: {},
+              })!
+            )
+          }}
+          onCancel={onBack}
+        />
+        <Text dimColor>
+          Use ↑↓ arrows to navigate, Enter to select
+        </Text>
+      </Box>
+    </Dialog>
+  )
+}
+
 function CodexCredentialStep({
   onSave,
   onBack,
@@ -1258,31 +1440,15 @@ function ProviderWizard({ onDone }: { onDone: LocalJSXCommandOnDone }): React.Re
       )
 
     case 'nvidia-model':
-      return (
-        <TextEntryDialog
-          resetStateKey={step.name}
-          title="NVIDIA NIM setup"
-          subtitle="Step 3 of 3"
-          description={`Enter a model ID. Leave blank for ${defaults.nvidiaModel}.\n\nPopular models:\n  moonshotai/kimi-k2-instruct\n  moonshotai/kimi-k2-thinking\n  nvidia/llama-3.1-nemotron-ultra-253b-v1\n  meta/llama-3.3-70b-instruct\n  deepseek-ai/deepseek-r1\n  qwen/qwen3-235b-a22b\n  mistralai/mistral-large-2-instruct`}
-          initialValue={defaults.nvidiaModel}
-          placeholder="moonshotai/kimi-k2-instruct"
-          allowEmpty
-          onSubmit={value => {
-            const env = buildNvidiaProfileEnv({
-              apiKey: step.apiKey,
-              baseUrl: step.baseUrl,
-              model: value.trim() || defaults.nvidiaModel,
-              processEnv: {},
-            })
-            if (env) {
-              finishProfileSave(onDone, 'nvidia', env)
-            }
-          }}
-          onCancel={() =>
-            setStep({ name: 'nvidia-base', apiKey: step.apiKey })
-          }
-        />
-      )
+       return (
+         <NvidiaModelStep
+           apiKey={step.apiKey}
+           baseUrl={step.baseUrl}
+           onSave={(profile, env) => finishProfileSave(onDone, profile, env)}
+           onBack={() => setStep({ name: 'nvidia-base', apiKey: step.apiKey })}
+           onCancel={() => onDone()}
+         />
+       )
   }
 }
 

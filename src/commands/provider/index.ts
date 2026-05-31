@@ -8,5 +8,5 @@ export default {
   get immediate() {
     return shouldInferenceConfigCommandBeImmediate()
   },
-  load: () => import('./provider.js'),
+  load: () => import('./provider'),
 } satisfies Command
